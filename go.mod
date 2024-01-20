@@ -1,3 +1,3 @@
-module hello
+module playground.kowalifwer
 
 go 1.21.6
