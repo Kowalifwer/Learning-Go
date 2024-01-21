@@ -7,6 +7,7 @@ import (
 )
 
 func main() {
+	// Set to run on port 3000, exposed via port forwarding
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "<h1>Hello World</h1>")
 	})
