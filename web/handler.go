@@ -32,10 +32,14 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func longTask(ch chan<- string) {
+func longTask() {
+	defer func() {
+		// print to console when the long task is done
+		fmt.Println("Long task completed")
+	}()
+
 	// Simulating a long task
-	time.Sleep(5 * time.Second)
-	ch <- "Long task completed"
+	time.Sleep(3 * time.Second)
 }
 
 func shortTask() string {
@@ -44,20 +48,12 @@ func shortTask() string {
 }
 
 func longTaskHandler(w http.ResponseWriter, r *http.Request) {
-	ch := make(chan string)
 
 	// Start the long task in a goroutine
-	go longTask(ch)
+	go longTask()
 
 	// Return a response immediately (Non BLOCKING) and the goroutine will continue the long task.
-	fmt.Fprint(w, "Long task started. Check status later.")
-
-	// You can optionally handle the result of the long task asynchronously
-	go func() {
-		result := <-ch
-		// Process the result, update database, etc.
-		fmt.Println(result)
-	}()
+	fmt.Fprint(w, "Long task started. Check result in console.")
 
 	// BELOW IS BLOCKING WAITING FOR THE RESULT
 
