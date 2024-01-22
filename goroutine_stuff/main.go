@@ -16,49 +16,53 @@ import (
 // 3. We should have a way to know when we are done processing all the emails, and then we can close the channel.
 
 func main() {
-	lazy_generator := make(chan string, 1)
-	var end_all int32 = 0
+	lazy_generator := make(chan string, 4)
+	end_fetching := make(chan struct{})
 	var once sync.Once
 	var wg sync.WaitGroup
 
 	var batches_read int64 = 0
 
-	N_PRODUCERS := 2
+	N_PRODUCERS := 10
+	N_CONSUMERS := 1
+
+	// Add to the wait group counter to ensure that the main at least waits for the PRODUCERS to finish.
+	// Key idea of this solution, is our producers will increment the wait group counter ONCE they add work to the queue.
+	// And our consumers will decrement the wait group counter ONCE they are done processing the work.
+	// However, we need to have a preemptive wg.Add(1) to make sure the producers run. We also must make sure to wg.Done() after the producers are done (ONLY ONCE)
+	wg.Add(1)
 
 	for i := 0; i < N_PRODUCERS; i++ {
-		wg.Add(1)
-		go endless_mail_retriever(lazy_generator, &batches_read, &end_all, &once, &wg)
+		go endless_mail_retriever(lazy_generator, &batches_read, end_fetching, &once, &wg, i+1)
 	}
 
-	// go endless_mail_retriever(lazy_generator, &batches_read, &end_all, &once)
+	// go endless_mail_retriever(lazy_generator, &batches_read, &end_fetching, &once)
 	// We can have as many producers as we want - they will add the the generator channel. Note that the channel will only store max of 1 email batch at a time. This is to avoid preemptively storing all emails in memory.
-	// go endless_mail_retriever(lazy_generator, &batches_read)
+	var batches_processed int64 = 0
 
-	// time.Sleep(time.Second)
-	go mail_processor(lazy_generator, &end_all)
-	// go mail_processor(lazy_generator, &end_all)
-	// go mail_processor(lazy_generator, &end_all)
+	for i := 0; i < N_CONSUMERS; i++ {
+		go mail_processor(lazy_generator, i+1, &batches_processed, &wg)
+	}
 
 	wg.Wait()
 
-	fmt.Printf("%d emails processed", batches_read)
+	fmt.Printf("%d email batches read and added to be proccessed \n", batches_read)
+	fmt.Printf("%d email batches actually processed", batches_processed)
 }
 
-func mail_processor(queue chan string, end_all *int32) {
+func mail_processor(queue chan string, id int, batches_processed *int64, wg *sync.WaitGroup) {
 	fmt.Println("Starting consumer...")
 	for email_batch := range queue {
-		if atomic.LoadInt32(end_all) == 1 {
-			fmt.Println("Abrupt stop")
-			return
-		}
 
-		fmt.Println("CONSUMING from queue")
+		fmt.Println("CONSUMING from queue", id)
 		process_emails(email_batch)
+		atomic.AddInt64(batches_processed, 1)
 		time.Sleep(time.Millisecond * 200)
+		wg.Done()
 	}
 
 	// for {
-	// 	if *end_all == 1 {
+	// 	if *end_fetching == 1 {
 	// 		fmt.Println("Abrupt stop")
 	// 		return
 	// 	}
@@ -83,36 +87,26 @@ func mail_processor(queue chan string, end_all *int32) {
 }
 
 // fetch 50 items -> process items -> fetch another 50 (or less) -> process items -> repeat until n total items processed.
-func endless_mail_retriever(queue chan string, batches_read *int64, end_all *int32, once *sync.Once, wg *sync.WaitGroup) {
+func endless_mail_retriever(queue chan string, batches_read *int64, end_fetching chan struct{}, once *sync.Once, wg *sync.WaitGroup, id int) {
 	url := "https://jsonplaceholder.typicode.com/posts?_delay=1000&_limit=50"
 
 	// make sure to close the channel once all batches have been read
 	defer once.Do(func() {
-		close(queue)
-		atomic.StoreInt32(end_all, 1) // set abrupt stop to true (1)
+		close(end_fetching)
+		wg.Done()
 	})
 
-	defer wg.Done()
-
 	for {
-		// abrupt stop simulation
-		// if *batches_read == 3 {
-		// 	fmt.Println("Abrupt stop")
-		// 	atomic.StoreInt32(end_all, 1) // set abrupt stop to true (1)
-		// 	break
-		// }
-
 		// simulates end of emails
-		if *batches_read == 20 {
-			fmt.Println("Done reading batches")
-			break
+		if atomic.LoadInt64(batches_read) >= 6 {
+			return
 		}
 
 		// Make a GET request
 		response, err := http.Get(url)
 		if err != nil {
 			fmt.Println("Error making the request:", err)
-			return
+			continue
 		}
 		defer response.Body.Close()
 
@@ -120,18 +114,23 @@ func endless_mail_retriever(queue chan string, batches_read *int64, end_all *int
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			fmt.Println("Error reading the response body:", err)
+			continue
+		}
+
+		select {
+		case <-end_fetching:
+			fmt.Println("Producer", id, "tried to add to queue after channel closed")
 			return
+
+		case queue <- string(body):
+			fmt.Println("Producer", id, "added to queue")
+			atomic.AddInt64(batches_read, 1)
+			wg.Add(1)
+
+		default:
+			// fmt.Println("Channel full/attempt to add to queue failed")
 		}
 
-		// send the email batch to the channel(blocking, if channel is full)
-		if atomic.LoadInt32(end_all) == 1 {
-			fmt.Println("all producers should stop - channel closed and not adding to queue")
-			break
-		}
-
-		atomic.AddInt64(batches_read, 1)
-		queue <- string(body)
-		fmt.Println("PRODUCING to queue")
 	}
 
 }
