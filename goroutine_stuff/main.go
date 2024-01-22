@@ -15,12 +15,19 @@ import (
 
 func main() {
 	lazy_generator := make(chan string, 1)
+	var abrupt_stop int32 = 0
+
 	var batches_read int64 = 0
-	go endless_mail_retriever(lazy_generator, &batches_read)
+	go endless_mail_retriever(lazy_generator, &batches_read, &abrupt_stop)
 	// We can have as many producers as we want - they will add the the generator channel. Note that the channel will only store max of 1 email batch at a time. This is to avoid preemptively storing all emails in memory.
 	// go endless_mail_retriever(lazy_generator, &batches_read)
 
 	for email_batch := range lazy_generator {
+		if abrupt_stop == 1 {
+			fmt.Println("Abrupt stop")
+			break
+		}
+
 		process_emails(email_batch)
 	}
 
@@ -28,12 +35,18 @@ func main() {
 }
 
 // fetch 50 items -> process items -> fetch another 50 (or less) -> process items -> repeat until n total items processed.
-func endless_mail_retriever(queue chan string, batches_read *int64) {
-	url := "https://jsonplaceholder.typicode.com/posts?_delay=1000&_limit=1"
+func endless_mail_retriever(queue chan string, batches_read *int64, abrupt_stop *int32) {
+	url := "https://jsonplaceholder.typicode.com/posts?_delay=1000&_limit=50"
 
 	defer close(queue) // make sure to close the channel once all batches have been read
 
 	for {
+		if *batches_read == 3 {
+			fmt.Println("Abrupt stop")
+			atomic.StoreInt32(abrupt_stop, 1) // set abrupt stop to true (1)
+			break
+		}
+
 		if *batches_read == 5 {
 			fmt.Println("Done reading batches")
 			break
