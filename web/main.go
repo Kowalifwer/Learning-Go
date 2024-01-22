@@ -16,7 +16,10 @@ func main() {
 	mux := http.NewServeMux()
 	fileServer := http.FileServer(http.Dir("./ui/static/"))
 	mux.Handle("/static/", http.StripPrefix("/static", fileServer))
+
 	mux.HandleFunc("/", Home)
+	mux.HandleFunc("/longtask", longTaskHandler)
+	mux.HandleFunc("/shorttask", shortTaskHandler)
 
 	// Initialize a new http.Server struct. We set the Addr and Handler fields so
 	// that the server uses the same network address and routes as before, and set
