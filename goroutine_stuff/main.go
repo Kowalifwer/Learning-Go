@@ -52,8 +52,8 @@ func main() {
 
 func mail_processor(queue chan string, id int, batches_processed *int64, wg *sync.WaitGroup) {
 	fmt.Println("Starting consumer...")
+	// RANGE LOOP OVER CHANNEL APPROACH (cleaner IMO)
 	for email_batch := range queue {
-
 		fmt.Println("CONSUMING from queue", id)
 		process_emails(email_batch)
 		atomic.AddInt64(batches_processed, 1)
@@ -61,12 +61,8 @@ func mail_processor(queue chan string, id int, batches_processed *int64, wg *syn
 		wg.Done()
 	}
 
+	// INFINITE LOOP WITH SELECT CASE APPROACH
 	// for {
-	// 	if *end_fetching == 1 {
-	// 		fmt.Println("Abrupt stop")
-	// 		return
-	// 	}
-
 	// 	select {
 	// 	case email_batch, ok := <-queue:
 	// 		if !ok {
@@ -75,13 +71,14 @@ func mail_processor(queue chan string, id int, batches_processed *int64, wg *syn
 	// 		}
 
 	// 		// sleep 200 ms
-	// 		time.Sleep(time.Millisecond * 200)
-	// 		fmt.Println("CONSUMING from queue")
+	// 		fmt.Println("CONSUMING from queue", id)
 	// 		process_emails(email_batch)
+	// 		time.Sleep(time.Millisecond * 200)
+	// 		atomic.AddInt64(batches_processed, 1)
+	// 		wg.Done()
 
-	// 	default: //perhaps when queue is empty, but not closed.
-	// 		// fmt.Println("No emails to process")
-
+	// 	default:
+	// 		time.Sleep(time.Millisecond * 200) // sleep 200 ms if channel is empty but not closed (i.e wait for more work)
 	// 	}
 	// }
 }
